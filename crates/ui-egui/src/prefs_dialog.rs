@@ -32,6 +32,11 @@ pub fn open(app: &mut VectorcraftApp, category: Option<&str>) {
     // One field per preference key or group (the flattener presets have commands of their own).
     let mut fields: Map<String, Value> = app.session.prefs.to_json().as_object().cloned().unwrap_or_default();
     fields.retain(|k, _| vectorcraft_engine::cmd::prefscmds::spec(k).is_some() || PREF_GROUPS.contains(&k.as_str()));
+    // A restored settings file can hold a Hold Shortcut Delay outside its range: the dialog shows,
+    // and OK sets, the delay in use.
+    if fields.contains_key("keyHoldDelay") {
+        fields.insert("keyHoldDelay".into(), json!(app.session.prefs.key_hold_delay()));
+    }
     // Units ▸ General shows (and OK sets) the open document's units.
     if let Some(st) = app.session.active() {
         fields.insert("unitsGeneral".into(), json!(st.doc.units.key()));
@@ -665,6 +670,18 @@ fn category_fields(ui: &mut egui::Ui, app: &mut VectorcraftApp, d: &mut Dialog, 
             // says the change applies at the next start.
             PrefKind::Bool if sp.key == "lowLatencyDrawing" => desktop_startup_bool_row(ui, d, sp.key, sp.label, &t),
             PrefKind::Bool => bool_row(ui, d, sp.key, sp.label),
+            // General › Hold Shortcut Delay acts only while Hold Shortcuts is on: dimmed while it
+            // is off, as in Edit › Keyboard Shortcuts, which shows it only then.
+            PrefKind::Num { min, max, unit } if sp.key == "keyHoldDelay" => {
+                ui.add_enabled_ui(d.bool("holdShortcuts"), |ui| {
+                    labeled(ui, sp.label, |ui, _| {
+                        let x = v.as_f64().unwrap_or(min);
+                        if let Some(x) = widgets::range_field(ui, sp.key, x, min..=max, &format!(" {unit}"), 3, 110.0) {
+                            d.fields.insert(sp.key.into(), json!(x));
+                        }
+                    });
+                });
+            }
             PrefKind::Num { min, max, unit } => {
                 labeled(ui, sp.label, |ui, label_id| {
                     let mut x = v.as_f64().unwrap_or(min);
